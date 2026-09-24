@@ -42,6 +42,8 @@ use rmk::config::{
 use rmk::debounce::fast_debouncer::FastDebouncer;
 use rmk::driver::bitbang_spi::BitBangSpiBus;
 use rmk::event::{PointingSetCpiEvent, publish_event};
+use rmk::embassy_futures::join::join;
+use rmk::event::{BleStatusChangeEvent, EventSubscriber, SubscribableEvent};
 use rmk::futures::future::join5;
 use rmk::input_device::Runnable;
 use rmk::input_device::pmw3610::{Pmw3610, Pmw3610Config};
@@ -186,6 +188,12 @@ async fn main(spawner: Spawner) {
         FLASH_MUTEX.init(Mutex::new(Flash::take(mpsl, p.NVMC)));
     let flash = SharedFlash::new(flash_mutex);
 
+    // --- Onboard LEDs (Seeed Studio XIAO BLE) ---
+    // Active-low: Level::High = OFF, Level::Low = ON
+    let _led_red = Output::new(p.P0_26, Level::High, OutputDrive::Standard);
+    let _led_green = Output::new(p.P0_30, Level::High, OutputDrive::Standard);
+    let led_blue = Output::new(p.P0_06, Level::High, OutputDrive::Standard);
+
     // --- 74HC595 matrix ---
     let row_pins = [
         Input::new(p.P0_28, Pull::Down),
@@ -309,14 +317,42 @@ async fn main(spawner: Spawner) {
         cpi: CPI_STEPS[DEFAULT_CPI_STEP as usize],
     });
 
-    join5(
-        run_all!(matrix, enc_head, enc_chest, enc_leg, pointing_device, pointing_processor),
-        keyboard.run(),
-        run_rmk(&keymap, driver, &stack, &mut storage, rmk_config),
-        pointing_user_key_dispatcher(flash_mutex),
-        sleep::sleep_manager(),
+    join(
+        ble_led_task(led_blue),
+        join5(
+            run_all!(matrix, enc_head, enc_chest, enc_leg, pointing_device, pointing_processor),
+            keyboard.run(),
+            run_rmk(&keymap, driver, &stack, &mut storage, rmk_config),
+            pointing_user_key_dispatcher(flash_mutex),
+            sleep::sleep_manager(),
+        ),
     )
     .await;
+}
+
+/// Controls onboard blue LED to display active BLE profile:
+/// - Profile 0: 1 blink
+/// - Profile 1: 2 blinks
+/// - Profile 2: 3 blinks
+async fn ble_led_task(mut blue: Output<'static>) {
+    let mut sub = BleStatusChangeEvent::subscriber();
+    let mut last_profile: Option<u8> = None;
+
+    loop {
+        let event = sub.next_event().await;
+        let profile = event.0.profile;
+
+        if last_profile != Some(profile) {
+            last_profile = Some(profile);
+            let blinks = (profile + 1) as usize;
+            for _ in 0..blinks {
+                blue.set_low(); // Active-low: ON
+                embassy_time::Timer::after(embassy_time::Duration::from_millis(150)).await;
+                blue.set_high(); // Active-low: OFF
+                embassy_time::Timer::after(embassy_time::Duration::from_millis(150)).await;
+            }
+        }
+    }
 }
 
 fn set_cpi(step: u8) {
