@@ -12,6 +12,7 @@ sensor-rotated-180 = []
 rmk = { git = "https://github.com/Taro-Hayashi/rmk", branch = "fix/ble-reconnect-encryption", features = [
     "async_matrix",
     "nrf52840_ble",
+    "adafruit_bl",
 ] }
 
 cortex-m = "0.7.7"

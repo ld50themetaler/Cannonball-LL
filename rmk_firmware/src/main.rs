@@ -219,28 +219,42 @@ async fn main(spawner: Spawner) {
         PointingDevice::<Pmw3610<_, _>>::new(0, pmw_spi, Some(pmw_motion), pmw_config);
 
     // --- Rotary encoders ---
-    let mut enc_head = RotaryEncoder::new(
+    // QMK設定 (resolution: 2) に合わせ、1ノッチ2パルスで1イベント発火するように設定
+    // 機械的チャタリング防止のため 15ms のデバウンスフィルタを付与
+    let mut enc_head = RotaryEncoder::with_resolution(
         Input::new(p.P0_03, Pull::Up),
         Input::new(p.P0_02, Pull::Up),
+        2,
+        false,
         0,
-    );
-    let mut enc_chest = RotaryEncoder::new(
+    )
+    .with_debounce(15);
+    let mut enc_chest = RotaryEncoder::with_resolution(
         Input::new(p.P1_15, Pull::Up),
         Input::new(p.P1_14, Pull::Up),
+        2,
+        false,
         1,
-    );
+    )
+    .with_debounce(15);
     #[cfg(not(feature = "sensor-rotated-180"))]
-    let mut enc_leg = RotaryEncoder::new(
+    let mut enc_leg = RotaryEncoder::with_resolution(
         Input::new(p.P1_13, Pull::Up),
         Input::new(p.P1_12, Pull::Up),
         2,
-    );
+        false,
+        2,
+    )
+    .with_debounce(15);
     #[cfg(feature = "sensor-rotated-180")]
-    let mut enc_leg = RotaryEncoder::new(
+    let mut enc_leg = RotaryEncoder::with_resolution(
         Input::new(p.P1_12, Pull::Up),
         Input::new(p.P1_13, Pull::Up),
         2,
-    );
+        false,
+        2,
+    )
+    .with_debounce(15);
 
     // --- RMK config ---
     let storage_config = StorageConfig {
